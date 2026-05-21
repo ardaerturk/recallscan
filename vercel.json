@@ -1,0 +1,14 @@
+{
+  "rewrites": [
+    {
+      "source": "/api/:path*",
+      "destination": "/api/index"
+    }
+  ],
+  "crons": [
+    {
+      "path": "/api/jobs/scan-recent",
+      "schedule": "0 8 * * *"
+    }
+  ]
+}
