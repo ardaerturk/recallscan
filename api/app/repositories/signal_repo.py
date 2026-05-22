@@ -15,7 +15,9 @@ async def upsert_signal(
         await session.execute(select(RecallSignal).where(RecallSignal.fingerprint == signal.fingerprint))
     ).scalar_one_or_none()
     if existing:
-        existing.source_id = source.id
+        existing_source = await session.get(ExternalSource, existing.source_id)
+        if not existing_source or _source_priority(source) <= _source_priority(existing_source):
+            existing.source_id = source.id
         existing.title = signal.title
         existing.company = signal.company
         existing.hazard_type = signal.hazard_type
@@ -51,6 +53,19 @@ async def upsert_signal(
     session.add(row)
     await session.flush()
     return row, True
+
+
+def _source_priority(source: ExternalSource) -> int:
+    source_type = source.source_type or ""
+    if source_type == "official_recall":
+        return 0
+    if source_type == "public_health_alert":
+        return 1
+    if source_type == "direct_recall_notice":
+        return 2
+    if source_type == "outbreak_update":
+        return 4
+    return 5
 
 
 async def recent_signals(session: AsyncSession, days: int = 365) -> list[RecallSignal]:
