@@ -1,5 +1,13 @@
 insert into stores (id, name, city, state, region, latitude, longitude)
 values
+  ('store_sf', 'Northstar Market Mission', 'San Francisco', 'CA', 'West', 37.7516, -122.4350),
+  ('store_oak', 'Northstar Market Rockridge', 'Oakland', 'CA', 'West', 37.8044, -122.2712),
+  ('store_bk', 'Northstar Market Williamsburg', 'Brooklyn', 'NY', 'Northeast', 40.7081, -73.9571),
+  ('store_jer', 'Northstar Market Grove Street', 'Jersey City', 'NJ', 'Northeast', 40.7178, -74.0431),
+  ('store_atl', 'Northstar Market Midtown', 'Atlanta', 'GA', 'South', 33.7838, -84.3839),
+  ('store_col', 'Northstar Market Short North', 'Columbus', 'OH', 'Midwest', 39.9788, -83.0030),
+  ('store_dal', 'Northstar Market Deep Ellum', 'Dallas', 'TX', 'South', 32.8218, -96.7877),
+  ('store_chi', 'Northstar Market Wicker Park', 'Chicago', 'IL', 'Midwest', 41.9105, -87.6776),
   ('store_la', 'Northstar Market Silver Lake', 'Los Angeles', 'CA', 'West', 34.0928, -118.2807),
   ('store_sea', 'Northstar Market Capitol Hill', 'Seattle', 'WA', 'West', 47.6245, -122.3208),
   ('store_den', 'Northstar Market LoDo', 'Denver', 'CO', 'Mountain', 39.7530, -104.9990),
