@@ -1,6 +1,7 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.app.config import Settings
+from api.app.models.db import ExternalSource
 from api.app.repositories.catalog_repo import list_catalog_items, ensure_catalog_bootstrap
 from api.app.repositories.match_repo import recent_product_mention_candidates, replace_matches
 from api.app.repositories.scan_repo import (
@@ -9,7 +10,7 @@ from api.app.repositories.scan_repo import (
     get_scan_run_by_idempotency_key,
     restart_failed_scan_run,
 )
-from api.app.repositories.signal_repo import upsert_signal
+from api.app.repositories.signal_repo import recent_signals, upsert_signal
 from api.app.repositories.source_repo import upsert_source
 from api.app.services.locks import acquire_lock, release_lock
 from api.app.services.matcher import match_signal_to_catalog
@@ -124,6 +125,7 @@ async def run_recent_recall_scan(
         matched_items = [catalog_by_id[item_id] for item_id in matched_catalog_item_ids if item_id in catalog_by_id]
         if product_asset_max_items > 0:
             await enrich_product_assets(session, settings, matched_items, max_items=product_asset_max_items)
+        matches_created = await _refresh_recent_exposure_matches(session, catalog, days=days)
         await finish_scan_run(
             session,
             run,
@@ -191,6 +193,17 @@ async def _process_raw_result(session: AsyncSession, raw: dict, catalog: list) -
             and decision.catalog_item_id in catalog_by_id
         ],
     )
+
+
+async def _refresh_recent_exposure_matches(session: AsyncSession, catalog: list, *, days: int) -> int:
+    total = 0
+    for signal in await recent_signals(session, days=days):
+        source = await session.get(ExternalSource, signal.source_id)
+        if not source:
+            continue
+        decisions = match_signal_to_catalog(signal, catalog, action_source=is_action_source_type(source.source_type))
+        total += len(await replace_matches(session, signal, decisions))
+    return total
 
 
 def _evidence(raw: dict) -> list[str]:

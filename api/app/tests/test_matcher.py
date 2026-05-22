@@ -85,6 +85,31 @@ def test_brand_product_match_handles_beverage_mix_language():
     assert decisions[0].match_type == "brand_product"
 
 
+def test_same_brand_different_flavor_does_not_confirm_product_match():
+    decisions = match_signal_to_catalog(
+        signal(
+            title="Zapp's potato chips recall",
+            company="Utz Quality Foods",
+            affected_products_json=[{"brand": "Zapp's Brand", "product_name": "Bayou Blackened Ranch Potato Chips"}],
+            identifiers_json={"upcs": [], "lot_codes": []},
+            supplier_chain_json=[],
+        ),
+        [
+            item(
+                brand="Zapp's",
+                product_name="Voodoo Potato Chips",
+                upc="000000000000",
+                category="potato chips",
+                supplier_name="Utz Brands",
+                co_manufacturer_name=None,
+                ingredients_json=[],
+                supplier_aliases_json=[],
+            )
+        ],
+    )
+    assert not any(decision.tier == "confirmed_match" for decision in decisions)
+
+
 def test_product_match_from_non_recall_source_returns_watch_only():
     decisions = match_signal_to_catalog(
         signal(identifiers_json={"upcs": [], "lot_codes": []}),
@@ -105,10 +130,66 @@ def test_supplier_chain_overlap_returns_supplier_review():
             identifiers_json={"upcs": [], "lot_codes": []},
             supplier_chain_json=[{"name": "California Dairies Inc.", "role": "ingredient supplier"}],
         ),
-        [item(brand="Northstar", product_name="Garlic Parmesan Croutons", upc="744000110427")],
+        [
+            item(
+                brand="Northstar",
+                product_name="Garlic Parmesan Croutons",
+                upc="744000110427",
+                supplier_name="California Dairies Inc.",
+                supplier_aliases_json=[],
+            )
+        ],
     )
     assert decisions[0].tier == "supplier_review"
     assert decisions[0].match_type == "supplier_chain"
+
+
+def test_upstream_alias_only_match_stays_watch_only():
+    decisions = match_signal_to_catalog(
+        signal(
+            title="Powdered milk supplier recall",
+            company="California Dairies Inc.",
+            affected_products_json=[{"product_name": "Powdered milk ingredient"}],
+            identifiers_json={"upcs": [], "lot_codes": []},
+            supplier_chain_json=[{"name": "California Dairies Inc.", "role": "ingredient supplier"}],
+        ),
+        [
+            item(
+                brand="Ghirardelli",
+                product_name="Double Chocolate Premium Hot Cocoa Mix",
+                upc="000000000000",
+                supplier_name="Ghirardelli Chocolate Company",
+                supplier_aliases_json=["Ghirardelli Chocolate", "California Dairies Inc."],
+            )
+        ],
+    )
+    assert decisions[0].tier == "watch_only"
+    assert decisions[0].match_type == "supplier_signal"
+
+
+def test_supplier_chain_overlap_from_non_recall_source_returns_watch_only():
+    decisions = match_signal_to_catalog(
+        signal(
+            title="Powdered milk supplier recall",
+            company="California Dairies Inc.",
+            affected_products_json=[{"product_name": "Powdered milk ingredient"}],
+            identifiers_json={"upcs": [], "lot_codes": []},
+            supplier_chain_json=[{"name": "California Dairies Inc.", "role": "ingredient supplier"}],
+        ),
+        [
+            item(
+                brand="Northstar",
+                product_name="Garlic Parmesan Croutons",
+                upc="744000110427",
+                supplier_name="California Dairies Inc.",
+                supplier_aliases_json=[],
+            )
+        ],
+        action_source=False,
+    )
+    assert decisions[0].tier == "watch_only"
+    assert decisions[0].match_type == "supplier_signal"
+    assert decisions[0].missing_fields == ["direct recall notice", "supplier lot confirmation"]
 
 
 def test_ingredient_only_overlap_returns_watch_only():

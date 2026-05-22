@@ -27,7 +27,8 @@ def _decision_for_item(signal: RecallSignal, item: CatalogItem, *, action_source
     upc_match = _upc_match(signal, item)
     product_match = _product_match(signal, item)
     exclusion_match = _explicit_exclusion_match(signal, item)
-    supplier_match = _supplier_chain_match(signal, item)
+    supplier_match = _supplier_chain_match(signal, item, include_upstream_aliases=False)
+    upstream_supplier_match = _supplier_chain_match(signal, item, include_upstream_aliases=True)
     ingredient_match = _ingredient_match(signal, item)
     geography_match = _geography_match(signal, item)
     category_match = _category_match(signal, item)
@@ -86,15 +87,29 @@ def _decision_for_item(signal: RecallSignal, item: CatalogItem, *, action_source
             recommended_action=recommended_action("no_exposure"),
         )
 
-    if supplier_match:
+    if supplier_match and action_source:
         return MatchDecision(
             catalog_item_id=item.id,
             tier="supplier_review",
             match_type="supplier_chain",
             matched_fields={"supplier_overlap": supplier_match},
             missing_fields=["supplier lot confirmation", "facility confirmation"],
-            explanation="The catalog supplier, co-manufacturer, or alias appears in the source supplier chain.",
+            explanation="The catalog supplier or co-manufacturer appears in the source supplier chain.",
             recommended_action=recommended_action("supplier_review"),
+        )
+
+    if supplier_match or upstream_supplier_match:
+        return MatchDecision(
+            catalog_item_id=item.id,
+            tier="watch_only",
+            match_type="supplier_signal",
+            matched_fields={
+                "supplier_overlap": supplier_match or upstream_supplier_match,
+                "direct_recall_notice_required": True,
+            },
+            missing_fields=["direct recall notice", "supplier lot confirmation"],
+            explanation="A supplier connection appears in the source, but product or lot exposure is not confirmed.",
+            recommended_action=recommended_action("watch_only"),
         )
 
     if ingredient_match and geography_match:
@@ -144,11 +159,15 @@ def _product_match(signal: RecallSignal, item: CatalogItem) -> bool:
     item_words = words(f"{item.brand} {item.product_name}")
     if len(item_words) < 2:
         return False
+    item_product_words = words(item.product_name)
+    item_distinctive_words = item_product_words - words(item.category)
     for product in signal.affected_products_json:
         product_words = words(f"{product.get('brand', '')} {product.get('product_name', '')}")
         if not product_words:
             continue
         overlap = item_words & product_words
+        if item_distinctive_words and not item_distinctive_words & product_words:
+            continue
         if len(overlap) >= max(2, min(4, len(product_words))):
             return True
     return False
@@ -173,12 +192,10 @@ def _explicit_exclusion_match(signal: RecallSignal, item: CatalogItem) -> str | 
     return None
 
 
-def _supplier_chain_match(signal: RecallSignal, item: CatalogItem) -> list[str]:
-    item_names = {
-        compact(item.supplier_name),
-        compact(item.co_manufacturer_name),
-        *(compact(alias) for alias in item.supplier_aliases_json),
-    }
+def _supplier_chain_match(
+    signal: RecallSignal, item: CatalogItem, *, include_upstream_aliases: bool
+) -> list[str]:
+    item_names = _supplier_chain_names(item, include_upstream_aliases=include_upstream_aliases)
     item_names = {name for name in item_names if name}
     chain_names = set()
     for node in signal.supplier_chain_json:
@@ -193,6 +210,35 @@ def _supplier_chain_match(signal: RecallSignal, item: CatalogItem) -> list[str]:
             if item_name == chain_name or item_name in chain_name or chain_name in item_name:
                 matches.append(chain_name)
     return sorted(set(matches))
+
+
+def _supplier_chain_names(item: CatalogItem, *, include_upstream_aliases: bool) -> set[str]:
+    direct_names = {
+        compact(item.brand),
+        compact(item.supplier_name),
+        compact(item.co_manufacturer_name),
+    }
+    direct_names = {name for name in direct_names if name}
+    if include_upstream_aliases:
+        return direct_names | {compact(alias) for alias in item.supplier_aliases_json if compact(alias)}
+    return direct_names | {
+        compact(alias)
+        for alias in item.supplier_aliases_json
+        if compact(alias) and _looks_like_direct_alias(compact(alias), direct_names)
+    }
+
+
+def _looks_like_direct_alias(alias: str, direct_names: set[str]) -> bool:
+    alias_words = words(alias)
+    if not alias_words:
+        return False
+    for name in direct_names:
+        if alias == name or alias in name or name in alias:
+            return True
+        name_words = words(name)
+        if len(alias_words & name_words) >= min(2, len(alias_words), len(name_words)):
+            return True
+    return False
 
 
 def _valid_supplier_chain_name(value: str) -> bool:
