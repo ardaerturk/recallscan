@@ -27,7 +27,15 @@ async def recent_recalls(
         signals = await recent_signals(session, days=days)
         source_mode = "database"
         if not signals:
-            _, source_mode = await run_recent_recall_scan(session, settings, days=days, force_fresh=False)
+            _, source_mode = await run_recent_recall_scan(
+                session,
+                settings,
+                days=days,
+                force_fresh=False,
+                source_limit=16,
+                direct_notice_max_items=0,
+                product_asset_max_items=0,
+            )
             await session.commit()
             signals = await recent_signals(session, days=days)
 

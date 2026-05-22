@@ -33,6 +33,9 @@ async def run_recent_recall_scan(
     days: int,
     force_fresh: bool = False,
     idempotency_key: str | None = None,
+    source_limit: int | None = None,
+    direct_notice_max_items: int = 3,
+    product_asset_max_items: int = 2,
 ) -> tuple[object, str]:
     await ensure_catalog_bootstrap(session)
     existing_run = (
@@ -70,6 +73,8 @@ async def run_recent_recall_scan(
         raw_results, source_mode = await discover_recent_recall_sources(
             settings, days=days, force_fresh=force_fresh
         )
+        if source_limit is not None:
+            raw_results = raw_results[:source_limit]
         catalog = await list_catalog_items(session)
         catalog_by_id = {item.id: item for item in catalog}
         matched_catalog_item_ids: list[str] = []
@@ -89,33 +94,36 @@ async def run_recent_recall_scan(
                     seen_catalog_item_ids.add(item_id)
             direct_notice_candidates.extend(result.direct_notice_candidates)
 
-        direct_results, direct_mode = await discover_direct_recall_notice_sources(
-            settings,
-            [
-                *(await _stored_direct_notice_candidates(session, days=days)),
-                *direct_notice_candidates,
-            ],
-            days=days,
-            force_fresh=force_fresh,
-        )
-        if direct_results:
-            source_mode = f"{source_mode}+{direct_mode}"
-        for raw in direct_results:
-            url = str(raw.get("url") or "")
-            if not url or url in processed_urls:
-                continue
-            processed_urls.add(url)
-            result = await _process_raw_result(session, raw, catalog)
-            signals_created += 1 if result.created else 0
-            signals_updated += 0 if result.created else 1
-            matches_created += result.matches_created
-            sources_found += 1
-            for item_id in result.matched_catalog_item_ids:
-                if item_id not in seen_catalog_item_ids:
-                    matched_catalog_item_ids.append(item_id)
-                    seen_catalog_item_ids.add(item_id)
+        if direct_notice_max_items > 0:
+            direct_results, direct_mode = await discover_direct_recall_notice_sources(
+                settings,
+                [
+                    *(await _stored_direct_notice_candidates(session, days=days)),
+                    *direct_notice_candidates,
+                ],
+                days=days,
+                force_fresh=force_fresh,
+                max_items=direct_notice_max_items,
+            )
+            if direct_results:
+                source_mode = f"{source_mode}+{direct_mode}"
+            for raw in direct_results:
+                url = str(raw.get("url") or "")
+                if not url or url in processed_urls:
+                    continue
+                processed_urls.add(url)
+                result = await _process_raw_result(session, raw, catalog)
+                signals_created += 1 if result.created else 0
+                signals_updated += 0 if result.created else 1
+                matches_created += result.matches_created
+                sources_found += 1
+                for item_id in result.matched_catalog_item_ids:
+                    if item_id not in seen_catalog_item_ids:
+                        matched_catalog_item_ids.append(item_id)
+                        seen_catalog_item_ids.add(item_id)
         matched_items = [catalog_by_id[item_id] for item_id in matched_catalog_item_ids if item_id in catalog_by_id]
-        await enrich_product_assets(session, settings, matched_items)
+        if product_asset_max_items > 0:
+            await enrich_product_assets(session, settings, matched_items, max_items=product_asset_max_items)
         await finish_scan_run(
             session,
             run,

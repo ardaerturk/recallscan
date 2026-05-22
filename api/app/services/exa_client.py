@@ -119,28 +119,30 @@ class ExaClient:
 
     async def search_recent_recalls(self, *, days: int, force_fresh: bool = False) -> list[dict[str, Any]]:
         start_date = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
-        official = await self._search(
-            query=(
-                "Recent food recall or public health alert. Extract affected products, brands, UPCs, "
-                "lot codes, hazards, allergens, suppliers, retailers, distribution states, "
-                "and explicit statements about products not affected."
+        official, supplier = await asyncio.gather(
+            self._search(
+                query=(
+                    "Recent food recall or public health alert. Extract affected products, brands, UPCs, "
+                    "lot codes, hazards, allergens, suppliers, retailers, distribution states, "
+                    "and explicit statements about products not affected."
+                ),
+                include_domains=["fda.gov", "foodsafety.gov", "fsis.usda.gov", "cdc.gov"],
+                start_published_date=start_date,
+                num_results=40,
+                search_type="auto",
+                max_age_hours=0 if force_fresh else 24,
             ),
-            include_domains=["fda.gov", "foodsafety.gov", "fsis.usda.gov", "cdc.gov"],
-            start_published_date=start_date,
-            num_results=40,
-            search_type="auto",
-            max_age_hours=0 if force_fresh else 24,
-        )
-        supplier = await self._search(
-            query=(
-                "Recent food recall caused by upstream ingredient contamination, supplier recall, "
-                "co-manufacturer cross-contact, seasoning blend, powdered milk, allergens, or shared equipment."
+            self._search(
+                query=(
+                    "Recent food recall caused by upstream ingredient contamination, supplier recall, "
+                    "co-manufacturer cross-contact, seasoning blend, powdered milk, allergens, or shared equipment."
+                ),
+                include_domains=None,
+                start_published_date=start_date,
+                num_results=30,
+                search_type="deep-lite",
+                max_age_hours=0 if force_fresh else 24,
             ),
-            include_domains=None,
-            start_published_date=start_date,
-            num_results=30,
-            search_type="deep-lite",
-            max_age_hours=0 if force_fresh else 24,
         )
         return _dedupe_results([*official, *supplier])
 
