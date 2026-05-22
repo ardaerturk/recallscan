@@ -113,7 +113,7 @@ export function Dashboard() {
               </div>
             </div>
             <h2 className="mt-6 max-w-xl text-3xl font-semibold tracking-normal text-white sm:text-4xl">
-              {reviewCount > 0 ? reviewHeadline(reviewCount) : "All clear. Nothing needs attention."}
+              {error ? "Unable to load recall data." : reviewCount > 0 ? reviewHeadline(reviewCount) : "All clear. Nothing needs attention."}
             </h2>
           </div>
 

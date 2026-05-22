@@ -20,10 +20,25 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     },
   });
   if (!response.ok) {
-    const detail = await response.text();
-    throw new Error(detail || `Request failed with ${response.status}`);
+    throw new Error(await responseErrorMessage(response));
   }
   return (await response.json()) as T;
+}
+
+async function responseErrorMessage(response: Response) {
+  const contentType = response.headers.get("content-type") ?? "";
+  if (contentType.includes("application/json")) {
+    const body = (await response.json().catch(() => null)) as { detail?: unknown; message?: unknown } | null;
+    const detail = typeof body?.detail === "string" ? body.detail : typeof body?.message === "string" ? body.message : "";
+    return detail || `Request failed with ${response.status}`;
+  }
+
+  const body = await response.text().catch(() => "");
+  if (contentType.includes("text/html") || body.trim().startsWith("<!DOCTYPE html")) {
+    return "RecallScan API is unavailable. Check the database connection, then scan again.";
+  }
+
+  return body.slice(0, 240) || `Request failed with ${response.status}`;
 }
 
 export function getDashboard(days = DEFAULT_LOOKBACK_DAYS) {

@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends
+from asyncpg.exceptions import PostgresError
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.app.config import Settings, get_settings
@@ -19,22 +21,28 @@ async def recent_recalls(
     session: AsyncSession = Depends(get_session),
     settings: Settings = Depends(get_settings),
 ):
-    await ensure_catalog_bootstrap(session)
-    await session.commit()
-    signals = await recent_signals(session, days=days)
-    source_mode = "database"
-    if not signals:
-        _, source_mode = await run_recent_recall_scan(session, settings, days=days, force_fresh=False)
+    try:
+        await ensure_catalog_bootstrap(session)
         await session.commit()
         signals = await recent_signals(session, days=days)
+        source_mode = "database"
+        if not signals:
+            _, source_mode = await run_recent_recall_scan(session, settings, days=days, force_fresh=False)
+            await session.commit()
+            signals = await recent_signals(session, days=days)
 
-    scans = await recent_scan_runs(session)
-    return DashboardResponse(
-        catalog_summary=await catalog_summary(session),
-        signals=await signal_outputs(session, signals),
-        scan_history=[scan_run_out(run) for run in scans],
-        meta={
-            "source_mode": source_mode,
-            "days": days,
-        },
-    )
+        scans = await recent_scan_runs(session)
+        return DashboardResponse(
+            catalog_summary=await catalog_summary(session),
+            signals=await signal_outputs(session, signals),
+            scan_history=[scan_run_out(run) for run in scans],
+            meta={
+                "source_mode": source_mode,
+                "days": days,
+            },
+        )
+    except (SQLAlchemyError, PostgresError) as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Database unavailable. Check the Neon connection and project quota.",
+        ) from exc
