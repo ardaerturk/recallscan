@@ -40,18 +40,24 @@ export function Dashboard() {
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    setError(null);
     const dash = await getDashboard(LOOKBACK_DAYS);
     setDashboard(dash);
+    setError(null);
   }, []);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- initial API hydration happens after mount.
     load()
-      .catch((reason: Error) => setError(reason.message))
+      .catch((reason: Error) => {
+        setDashboard(null);
+        setError(reason.message);
+      })
       .finally(() => setLoading(false));
     const timer = window.setInterval(() => {
-      load().catch(() => undefined);
+      load().catch((reason: Error) => {
+        setDashboard(null);
+        setError(reason.message);
+      });
     }, 30_000);
     return () => window.clearInterval(timer);
   }, [load]);
@@ -81,6 +87,7 @@ export function Dashboard() {
       await runManualScan(forceFresh);
       await load();
     } catch (reason) {
+      setDashboard(null);
       setError(reason instanceof Error ? reason.message : "Scan failed");
     } finally {
       setScanning(false);
