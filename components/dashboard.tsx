@@ -136,24 +136,26 @@ export function Dashboard() {
           </div>
         ) : null}
 
-        <section className="grid gap-6 lg:min-h-0 lg:flex-1 lg:grid-cols-[360px_minmax(0,1fr)]">
-          <SignalQueue
-            view={queueView}
-            setView={setQueueView}
-            items={visibleItems}
-            selectedId={selected?.id ?? null}
-            counts={{
-              action: actionItems.length,
-              watch: watchItems.length,
-            }}
-            onSelect={(item) => {
-              setSelectedId(item.id);
-              setTab("overview");
-            }}
-          />
+        {dashboard || !error ? (
+          <section className="grid gap-6 lg:min-h-0 lg:flex-1 lg:grid-cols-[360px_minmax(0,1fr)]">
+            <SignalQueue
+              view={queueView}
+              setView={setQueueView}
+              items={visibleItems}
+              selectedId={selected?.id ?? null}
+              counts={{
+                action: actionItems.length,
+                watch: watchItems.length,
+              }}
+              onSelect={(item) => {
+                setSelectedId(item.id);
+                setTab("overview");
+              }}
+            />
 
-          <EvidenceDrawer alert={selected} tab={tab} setTab={setTab} />
-        </section>
+            <EvidenceDrawer alert={selected} tab={tab} setTab={setTab} />
+          </section>
+        ) : null}
       </div>
     </main>
   );
