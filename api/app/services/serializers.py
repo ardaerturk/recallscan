@@ -2,8 +2,8 @@ from collections import defaultdict
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import load_only
 
-from api.app.config import get_settings
 from api.app.models.api import (
     CatalogItemOut,
     ExposureMatchOut,
@@ -66,9 +66,21 @@ async def signal_outputs(session: AsyncSession, signals: list[RecallSignal]) -> 
         items = (await session.execute(select(CatalogItem).where(CatalogItem.id.in_(item_ids)))).scalars().all()
         item_map = {item.id: item for item in items}
 
+    source_ids = list({signal.source_id for signal in signals})
+    source_map: dict[str, ExternalSource] = {}
+    if source_ids:
+        sources = (
+            await session.execute(
+                select(ExternalSource)
+                .options(_source_summary_columns())
+                .where(ExternalSource.id.in_(source_ids))
+            )
+        ).scalars().all()
+        source_map = {source.id: source for source in sources}
+
     outputs = []
     for signal in signals:
-        outputs.append(await signal_out(session, signal, by_signal.get(signal.id, []), item_map))
+        outputs.append(await signal_out(session, signal, by_signal.get(signal.id, []), item_map, source_map))
     return outputs
 
 
@@ -86,9 +98,11 @@ async def signal_out(
     signal: RecallSignal,
     matches: list[ExposureMatch] | None = None,
     item_map: dict[str, CatalogItem] | None = None,
+    source_map: dict[str, ExternalSource] | None = None,
 ) -> RecallSignalOut:
     matches = matches if matches is not None else []
     item_map = item_map if item_map is not None else {}
+    source_map = source_map if source_map is not None else {}
     if not matches:
         matches = (
             await session.execute(select(ExposureMatch).where(ExposureMatch.recall_signal_id == signal.id))
@@ -127,11 +141,17 @@ async def signal_out(
             )
         )
 
-    source = signal.__dict__.get("source") or await session.get(ExternalSource, signal.source_id)
+    source = source_map.get(signal.source_id) or signal.__dict__.get("source")
+    if source is None:
+        source = (
+            await session.execute(
+                select(ExternalSource)
+                .options(_source_summary_columns())
+                .where(ExternalSource.id == signal.source_id)
+            )
+        ).scalar_one_or_none()
     if not source:
         raise RuntimeError(f"Missing source for signal {signal.id}")
-    settings = get_settings()
-    raw_source = source.raw_exa_result_json if settings.debug_raw_sources else {}
     evidence = signal.raw_extraction_json.get("evidence", [])
     return RecallSignalOut(
         id=signal.id,
@@ -152,29 +172,41 @@ async def signal_out(
             source_domain=source.source_domain,
             source_type=source.source_type,
             title=source.title,
-            image_url=_string_or_none(source.raw_exa_result_json.get("image")),
-            favicon_url=_string_or_none(source.raw_exa_result_json.get("favicon")),
-            image_links=_image_links(source.raw_exa_result_json),
+            image_url=None,
+            favicon_url=None,
+            image_links=[],
             published_at=source.published_at,
             first_seen_at=source.first_seen_at,
             last_seen_at=source.last_seen_at,
-            raw_exa_result=raw_source,
+            raw_exa_result={},
         ),
         matches=match_outputs,
-        evidence=evidence if isinstance(evidence, list) else [],
+        evidence=_compact_evidence(evidence),
         action_memo=build_action_memo(signal, matches),
     )
 
 
-def _string_or_none(value: object) -> str | None:
-    return value.strip() if isinstance(value, str) and value.strip() else None
+def _source_summary_columns():
+    return load_only(
+        ExternalSource.id,
+        ExternalSource.canonical_url,
+        ExternalSource.source_domain,
+        ExternalSource.source_type,
+        ExternalSource.title,
+        ExternalSource.published_at,
+        ExternalSource.first_seen_at,
+        ExternalSource.last_seen_at,
+    )
 
 
-def _image_links(raw: dict[str, object]) -> list[str]:
-    extras = raw.get("extras")
-    if not isinstance(extras, dict):
+def _compact_evidence(value: object) -> list[str]:
+    if not isinstance(value, list):
         return []
-    values = extras.get("imageLinks")
-    if not isinstance(values, list):
-        return []
-    return [value.strip() for value in values if isinstance(value, str) and value.strip()]
+    excerpts = []
+    for item in value[:3]:
+        if not isinstance(item, str):
+            continue
+        text = " ".join(item.split())
+        if text:
+            excerpts.append(text[:700])
+    return excerpts

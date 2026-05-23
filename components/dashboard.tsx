@@ -21,6 +21,7 @@ import type {
 } from "@/lib/types";
 
 const LOOKBACK_DAYS = 365;
+const DASHBOARD_REFRESH_MS = 5 * 60 * 1000;
 
 type DrawerTab = "overview" | "locate" | "supplier" | "source";
 type QueueView = "action" | "watch";
@@ -58,7 +59,7 @@ export function Dashboard() {
         setDashboard(null);
         setError(reason.message);
       });
-    }, 30_000);
+    }, DASHBOARD_REFRESH_MS);
     return () => window.clearInterval(timer);
   }, [load]);
 

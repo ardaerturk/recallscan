@@ -2,6 +2,7 @@ from datetime import date, timedelta
 
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import load_only
 
 from api.app.models.db import ExternalSource, RecallSignal
 from api.app.models.domain import NormalizedRecallSignal
@@ -72,6 +73,26 @@ async def recent_signals(session: AsyncSession, days: int = 365) -> list[RecallS
     since = date.today() - timedelta(days=days)
     stmt = (
         select(RecallSignal)
+        .options(
+            load_only(
+                RecallSignal.id,
+                RecallSignal.source_id,
+                RecallSignal.title,
+                RecallSignal.company,
+                RecallSignal.hazard_type,
+                RecallSignal.hazard_description,
+                RecallSignal.affected_products_json,
+                RecallSignal.identifiers_json,
+                RecallSignal.supplier_chain_json,
+                RecallSignal.retailers_json,
+                RecallSignal.distribution_json,
+                RecallSignal.explicit_exclusions_json,
+                RecallSignal.event_date,
+                RecallSignal.raw_extraction_json,
+                RecallSignal.updated_at,
+                RecallSignal.created_at,
+            )
+        )
         .where(or_(RecallSignal.event_date >= since, RecallSignal.event_date.is_(None)))
         .order_by(RecallSignal.event_date.desc().nullslast(), RecallSignal.created_at.desc())
     )
