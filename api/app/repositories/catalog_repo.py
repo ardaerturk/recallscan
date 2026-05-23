@@ -73,10 +73,6 @@ async def inventory_for_catalog_item(
 
 
 async def ensure_catalog_bootstrap(session: AsyncSession) -> None:
-    count = await session.scalar(select(func.count(CatalogItem.id)))
-    if count:
-        return
-
     stores = [
         Store(id="store_sf", name="Northstar Market Noe", city="San Francisco", state="CA", region="West", latitude=37.7516, longitude=-122.4350),
         Store(id="store_oak", name="Northstar Market Oakland", city="Oakland", state="CA", region="West", latitude=37.8044, longitude=-122.2712),
@@ -97,7 +93,14 @@ async def ensure_catalog_bootstrap(session: AsyncSession) -> None:
         Store(id="store_pdx", name="Northstar Market Pearl", city="Portland", state="OR", region="West", latitude=45.5290, longitude=-122.6819),
         Store(id="store_clt", name="Northstar Market South End", city="Charlotte", state="NC", region="South", latitude=35.2138, longitude=-80.8571),
     ]
-    session.add_all(stores)
+    existing_store_ids = set(
+        (
+            await session.execute(
+                select(Store.id).where(Store.id.in_([store.id for store in stores]))
+            )
+        ).scalars()
+    )
+    session.add_all(store for store in stores if store.id not in existing_store_ids)
 
     items = [
         CatalogItem(
@@ -563,7 +566,14 @@ async def ensure_catalog_bootstrap(session: AsyncSession) -> None:
             metadata_json={"channels": ["grocery"], "store_states": ["IL", "OH", "PA", "NY"], "catalog_source": "bootstrap"},
         ),
     ]
-    session.add_all(items)
+    existing_item_ids = set(
+        (
+            await session.execute(
+                select(CatalogItem.id).where(CatalogItem.id.in_([item.id for item in items]))
+            )
+        ).scalars()
+    )
+    session.add_all(item for item in items if item.id not in existing_item_ids)
 
     lot_specs = [
         ("cat_fbj_sesame_single", "store_sf", "FBJ-SESAME-A", 18),
@@ -639,6 +649,17 @@ async def ensure_catalog_bootstrap(session: AsyncSession) -> None:
         ("cat_white_cheddar_seasoning", "store_col", "WCHED-1225-OH", 31),
         ("cat_white_cheddar_seasoning", "store_phl", "WCHED-1225-PA", 26),
     ]
+    existing_lot_keys = set(
+        (
+            await session.execute(
+                select(
+                    InventoryLot.catalog_item_id,
+                    InventoryLot.store_id,
+                    InventoryLot.lot_code,
+                )
+            )
+        ).all()
+    )
     session.add_all(
         InventoryLot(
             id=new_id("lot"),
@@ -648,6 +669,7 @@ async def ensure_catalog_bootstrap(session: AsyncSession) -> None:
             quantity_on_hand=quantity,
         )
         for item_id, store_id, lot_code, quantity in lot_specs
+        if (item_id, store_id, lot_code) not in existing_lot_keys
     )
     await session.flush()
 
