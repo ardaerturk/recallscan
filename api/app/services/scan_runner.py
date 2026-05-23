@@ -99,8 +99,12 @@ async def run_recent_recall_scan(
             direct_results, direct_mode = await discover_direct_recall_notice_sources(
                 settings,
                 [
-                    *(await _stored_direct_notice_candidates(session, days=days)),
                     *direct_notice_candidates,
+                    *(await _stored_direct_notice_candidates(
+                        session,
+                        days=days,
+                        limit=max(direct_notice_max_items * 2, 20),
+                    )),
                 ],
                 days=days,
                 force_fresh=force_fresh,
@@ -237,10 +241,12 @@ def _direct_notice_context(signal) -> str:
     return " ".join(value for value in values if value).strip()
 
 
-async def _stored_direct_notice_candidates(session: AsyncSession, *, days: int) -> list[DirectRecallNoticeCandidate]:
+async def _stored_direct_notice_candidates(
+    session: AsyncSession, *, days: int, limit: int = 20
+) -> list[DirectRecallNoticeCandidate]:
     return [
         DirectRecallNoticeCandidate(item=item, context=_direct_notice_context(signal))
-        for signal, item in await recent_direct_notice_candidates(session, days=days)
+        for signal, item in await recent_direct_notice_candidates(session, days=days, limit=limit)
     ]
 
 
