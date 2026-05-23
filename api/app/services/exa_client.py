@@ -167,7 +167,7 @@ class ExaClient:
             *(
                 self._search(
                     query=query,
-                    include_domains=None,
+                    include_domains=["fda.gov", "fsis.usda.gov"],
                     start_published_date=start_date,
                     num_results=12,
                     search_type="auto",
