@@ -49,7 +49,15 @@ async def all_matches_for_signals(session: AsyncSession, signal_ids: list[str]) 
     ).scalars().all()
 
 
-async def recent_product_mention_candidates(
+DIRECT_NOTICE_CANDIDATE_MATCH_TYPES = {
+    "product_mention",
+    "supplier_signal",
+    "ingredient_geography",
+    "nearby_category_or_ingredient",
+}
+
+
+async def recent_direct_notice_candidates(
     session: AsyncSession, *, days: int, limit: int = 20
 ) -> list[tuple[RecallSignal, CatalogItem]]:
     since = date.today() - timedelta(days=days)
@@ -58,7 +66,7 @@ async def recent_product_mention_candidates(
         .join(ExposureMatch, ExposureMatch.recall_signal_id == RecallSignal.id)
         .join(CatalogItem, CatalogItem.id == ExposureMatch.catalog_item_id)
         .where(
-            ExposureMatch.match_type == "product_mention",
+            ExposureMatch.match_type.in_(DIRECT_NOTICE_CANDIDATE_MATCH_TYPES),
             or_(RecallSignal.event_date >= since, RecallSignal.event_date.is_(None)),
         )
         .order_by(RecallSignal.event_date.desc().nullslast(), RecallSignal.updated_at.desc())

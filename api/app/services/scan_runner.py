@@ -3,7 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from api.app.config import Settings
 from api.app.models.db import ExternalSource
 from api.app.repositories.catalog_repo import list_catalog_items, ensure_catalog_bootstrap
-from api.app.repositories.match_repo import recent_product_mention_candidates, replace_matches
+from api.app.repositories.match_repo import recent_direct_notice_candidates, replace_matches
 from api.app.repositories.scan_repo import (
     create_scan_run,
     finish_scan_run,
@@ -188,7 +188,13 @@ async def _process_raw_result(session: AsyncSession, raw: dict, catalog: list) -
                 context=_direct_notice_context(row),
             )
             for decision in decisions
-            if decision.match_type == "product_mention"
+            if decision.match_type
+            in {
+                "product_mention",
+                "supplier_signal",
+                "ingredient_geography",
+                "nearby_category_or_ingredient",
+            }
             and not is_action_source_type(source.source_type)
             and decision.catalog_item_id in catalog_by_id
         ],
@@ -234,7 +240,7 @@ def _direct_notice_context(signal) -> str:
 async def _stored_direct_notice_candidates(session: AsyncSession, *, days: int) -> list[DirectRecallNoticeCandidate]:
     return [
         DirectRecallNoticeCandidate(item=item, context=_direct_notice_context(signal))
-        for signal, item in await recent_product_mention_candidates(session, days=days)
+        for signal, item in await recent_direct_notice_candidates(session, days=days)
     ]
 
 
